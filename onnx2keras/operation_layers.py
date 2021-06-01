@@ -22,7 +22,7 @@ def convert_clip(node, params, layers, lambda_func, node_name, keras_name):
     :param keras_name: resulting layer name
     :return: None
     """
-    logger = logging.getLogger('onnx2keras.clip')
+    logger = logging.getLogger('onnx2keras:clip')
     if len(node.input) != 1:
         assert AttributeError('More than 1 input for clip layer.')
 
@@ -269,7 +269,7 @@ def convert_cast(node, params, layers, lambda_func, node_name, keras_name):
     :param keras_name: resulting layer name
     :return: None
     """
-    logger = logging.getLogger('onnx2keras.cast')
+    logger = logging.getLogger('onnx2keras:cast')
 
     if len(node.input) != 1:
         assert AttributeError('More than 1 input for cast layer.')
@@ -398,12 +398,37 @@ def convert_reduce_l2(node, params, layers, lambda_func, node_name, keras_name):
 
     input_0 = ensure_tf_type(layers[node.input[0]], name="%s_const" % keras_name)
     axis = params.get("axes", [-1])
-    keepdims = params.get("keepdims", 0)
 
-    def target_layer(x, axis=axis, keepdims=keepdims):
+    def target_layer(x, axis=axis):
         import tensorflow as tf
-        return tf.norm(x, axis=axis, keepdims=keepdims == 1)
+        return tf.norm(x, axis=axis)
 
     lambda_layer = keras.layers.Lambda(target_layer, name=keras_name)
     layers[node_name] = lambda_layer(input_0)
     lambda_func[keras_name] = target_layer
+
+
+def convert_abs(node, params, layers, lambda_func, node_name, keras_name):
+    """
+    Convert Abs layer
+    :param node: current operation node
+    :param params: operation attributes
+    :param layers: available keras layers
+    :param lambda_func: function for keras Lambda layer
+    :param node_name: resulting layer name
+    :return: None
+    """
+    if len(node.input) != 1:
+        assert AttributeError('More than 1 input for Abs layer.')
+
+    input_0 = ensure_tf_type(layers[node.input[0]], name="%s_const" % keras_name)
+
+    def target_layer(x):
+        import tensorflow.keras.backend as K
+        return K.abs(x)
+
+    lambda_layer = keras.layers.Lambda(target_layer, name=keras_name)
+    layers[node_name] = lambda_layer(input_0)
+    lambda_func[keras_name] = target_layer
+
+

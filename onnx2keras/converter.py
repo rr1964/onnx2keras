@@ -5,7 +5,6 @@ The ONNX to keras converter module
 from tensorflow import keras
 import logging
 import inspect
-import collections
 from onnx import numpy_helper
 
 from .layers import AVAILABLE_CONVERTERS
@@ -171,7 +170,8 @@ def onnx_to_keras(onnx_model, input_names,
                     raise AttributeError('Current node is not in weights / model inputs / layers.')
         else:
             logger.debug('... found all, continue')
-
+        print("Printing node type: " , node_type)
+        print(AVAILABLE_CONVERTERS)
         keras.backend.set_image_data_format('channels_first')
         AVAILABLE_CONVERTERS[node_type](
             node,
@@ -198,12 +198,6 @@ def onnx_to_keras(onnx_model, input_names,
     model = keras.models.Model(inputs=keras_inputs, outputs=keras_outputs)
 
     if change_ordering:
-        change_ord_axes_map = {
-            3: 2,
-            1: 3,
-            -1: 1
-        }
-
         import numpy as np
         conf = model.get_config()
 
@@ -232,11 +226,10 @@ def onnx_to_keras(onnx_model, input_names,
             if layer['config'] and 'data_format' in layer['config']:
                 layer['config']['data_format'] = 'channels_last'
             if layer['config'] and 'axis' in layer['config']:
-                axis = layer['config']['axis']
-                # BatchNorm wrap axis with ListWrapper instead single INT value
-                if isinstance(axis, (tuple, list)):
-                    axis = axis[0]
-                layer['config']['axis'] = change_ord_axes_map.get(axis, layer['config']['axis'])
+                if layer['config']['axis'] == 3:
+                    layer['config']['axis'] = 1
+                if layer['config']['axis'] == 1:
+                    layer['config']['axis'] = 3
 
         for layer in conf['layers']:
             if 'function' in layer['config'] and layer['config']['function'][1] is not None:
@@ -245,10 +238,7 @@ def onnx_to_keras(onnx_model, input_names,
                 func = lambda_funcs.get(layer['name'])
 
                 if func:
-                    # ReduceSum operation has 'axis' param as array of ints. When onnx uses ReduceSum
-                    # to reproduce SoftMax - dargs become something like [[1]] (list of lists)
-                    # that why we handle collections.Iterable
-                    if len(dargs) > 1 or isinstance(dargs[0], (tuple, list)):
+                    if len(dargs) > 1:
                         params = inspect.signature(func).parameters
                         i = list(params.keys()).index('axes') if ('axes' in params) else -1
 
@@ -264,11 +254,12 @@ def onnx_to_keras(onnx_model, input_names,
                             i -= 1
                             axis = np.array(dargs[i])
                             axes_map = np.array([0, 3, 1, 2])
-                            # to list because some tf operations check only for core python types (e.g tf.norm)
-                            dargs[i] = axes_map[axis].tolist()
+                            dargs[i] = axes_map[axis]
                     else:
-                        # if map exits will change else will remain the same
-                        dargs[0] = change_ord_axes_map.get(dargs[0], dargs[0])
+                        if dargs[0] == -1:
+                            dargs = [1]
+                        elif dargs[0] == 3:
+                            dargs = [1]
 
                 kerasf[1] = tuple(dargs)
                 layer['config']['function'] = tuple(kerasf)
